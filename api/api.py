@@ -4,8 +4,21 @@ import random
 import string
 
 from fastapi import Body, FastAPI, File, HTTPException, Response, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Network Analyzer API", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 OPENAPI_KEY = os.environ.get("OPENAPI_KEY")
@@ -21,9 +34,6 @@ def login(response: Response, password_hash: str = Body(...)):
 
     # Hash the APP_PASSWORD to compare with the incoming hash
     expected_hash = hashlib.sha256(APP_PASSWORD.encode()).hexdigest()
-
-    print(password_hash)
-    print(expected_hash)
 
     # Compare the provided hash against the hashed APP_PASSWORD
     if password_hash != expected_hash:
