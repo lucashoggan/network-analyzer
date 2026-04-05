@@ -1,75 +1,92 @@
-import { useState, FormEvent } from "react";
+import { useState } from "react";
+import Navbar from "./components/navbar";
+import type { FormEvent } from "react";
 import { generateSHA256 } from "./functions";
+import LogList from "./components/LogList";
+import LoginModal from "./components/modals/LoginModal";
+import UploadModal from "./components/modals/UploadModal";
+import { useLogData } from "./hooks/useLogRefresh";
 import "./App.css";
 
-function App() {
-  const [isModalOpen, setIsModalOpen] = useState(true);
-  const [password, setPassword] = useState("");
+type ModalType = "login" | "upload" | null;
 
-  const handleOpenModal = () => setIsModalOpen(true);
+function App() {
+  const [modalType, setModalType] = useState<ModalType>(null);
+  const [password, setPassword] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const { logDataVersion, notifyLogDataChanged } = useLogData();
+
   const handleCloseModal = () => {
-    setIsModalOpen(false);
+    setModalType(null);
     setPassword("");
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    try {
-      const hash = await generateSHA256(password);
-      const response = await fetch("http://127.0.0.1:8000/user/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(hash),
-        credentials: "include",
-      });
+    if (modalType === "login") {
+      try {
+        const hash = await generateSHA256(password);
+        const response = await fetch("/api/users/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(hash),
+          credentials: "include",
+        });
 
-      if (response.ok) {
-        console.log("Logged in successfully");
-        handleCloseModal();
-      } else {
-        console.error("Login failed");
+        if (response.ok) {
+          console.log("Logged in successfully");
+          setAuthed(true);
+          handleCloseModal();
+        } else {
+          console.error("Login failed");
+        }
+      } catch (error) {
+        console.error("Error during login:", error);
       }
-    } catch (error) {
-      console.error("Error during login:", error);
+    }
+  };
+
+  const renderModal = () => {
+    switch (modalType) {
+      case "login":
+        return (
+          <LoginModal
+            password={password}
+            setPassword={setPassword}
+            handleSubmit={handleSubmit}
+            handleClose={handleCloseModal}
+          />
+        );
+      case "upload":
+        return (
+          <UploadModal
+            handleClose={handleCloseModal}
+            onUploadSuccess={notifyLogDataChanged}
+          />
+        );
+      default:
+        return null;
     }
   };
 
   return (
-    <div className="app-container">
-      {isModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h2>Enter Password</h2>
+    <main>
+      <Navbar
+        authed={authed}
+        onLoginClick={() => setModalType("login")}
+        onUploadClick={() => setModalType("upload")}
+      />
 
-            <form onSubmit={handleSubmit} className="modal-form">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password..."
-                autoFocus
-                className="modal-input"
-              />
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="btn-cancel"
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-submit">
-                  Submit
-                </button>
-              </div>
-            </form>
-          </div>
+      {authed && (
+        <div className="app-container">
+          <LogList logDataVersion={logDataVersion} />
         </div>
       )}
-    </div>
+
+      {renderModal()}
+    </main>
   );
 }
 
