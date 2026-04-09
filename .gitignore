@@ -1,2 +1,6 @@
 *.env
 *.bat
+/datasets
+/**/__pycache__
+/api/test.py
+/tools/data.csv

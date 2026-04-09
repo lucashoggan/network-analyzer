@@ -51,7 +51,7 @@ class SessionCookieMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SessionCookieMiddleware)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-OPENAPI_KEY = os.environ.get("OPENAPI_KEY")
+OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
 APP_PASSWORD = "test_password" if APP_PASSWORD is None else APP_PASSWORD
 

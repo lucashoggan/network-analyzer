@@ -9,6 +9,9 @@ This is a hobby project of mine, it uses encoding models to spot outliers / susp
 - Docker to package these all togtether and easily package with pgvector for quick local setup
 
 ## Changelog
+### v0.3.0
+- Started work on workflow to turn a client's .pcap files into natural language ready for embedding models
+- Switched OpenAI key varibles to OpenRouter
 ### v0.2.0
 - File uploading in api and frontend with docker volume to persist uploads
 - Docker compose wrote to help containers communicate and include pgvector
@@ -19,3 +22,6 @@ This is a hobby project of mine, it uses encoding models to spot outliers / susp
 ### v0.1.0
 - Basic boilerplate
 - Basic modal for login and basic login logic on backend (just uses a simple app password hash and cookies)
+
+## TODOs / Ideas
+- To be able to show the "distances" between captures in a visual format, currently thinking of implementing t-SNE to represent this in a 2D format [JS implementation / Library](https://cs.stanford.edu/people/karpathy/tsnejs)
