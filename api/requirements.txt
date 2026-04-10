@@ -7,3 +7,5 @@ pgvector
 databases
 openai
 psycopg2-binary
+scikit-learn
+numpy

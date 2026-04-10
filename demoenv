@@ -1,4 +1,5 @@
 OPENROUTER_KEY=...
+SKIP_EMBEDDINGS=false # only used for developing the frontend
 
 PG_USER=dbuser
 PG_PASSWORD=mysecuredb

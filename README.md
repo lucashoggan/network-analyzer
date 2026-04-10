@@ -9,6 +9,14 @@ This is a hobby project of mine, it uses encoding models to spot outliers / susp
 - Docker to package these all togtether and easily package with pgvector for quick local setup
 
 ## Changelog
+### v0.5.0
+- Interactive t-SNE 2D map showing distance between network sections
+- Anomaly detection via Local Outlier Factor with color-coded severity (green/amber/red)
+- Clickable map sections display packet ranges and detailed statistics
+- Configurable upload processing: choose batch count or timeframe per file
+- Support for large file uploads (up to 500MB)
+- Auto-authentication on page load if session token exists
+- Parallel pcap-to-csv conversion for faster processing
 ### v0.4.0
 - Uses unique filename saving to avoid conflicts
 - Work started on python ORM for the pgvector database

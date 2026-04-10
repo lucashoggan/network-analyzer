@@ -5,11 +5,13 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     ForeignKey,
     Integer,
     MetaData,
     String,
     create_engine,
+    func,
     text,
 )
 from sqlalchemy.ext.declarative import declarative_base
@@ -38,6 +40,9 @@ class LogFile(Base):
     id = mapped_column(Integer, primary_key=True, index=True)
     filename = mapped_column(String(100))
     processed = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    processing_method = mapped_column(String(20), nullable=False, server_default=text("'batch'"))
+    processing_value = mapped_column(Integer, nullable=False, server_default=text("5"))
+    uploaded_at = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class LogSection(Base):

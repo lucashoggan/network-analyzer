@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Navbar from "./components/navbar";
 import type { FormEvent } from "react";
 import { generateSHA256 } from "./functions";
 import LogList from "./components/LogList";
+import LogDetail from "./components/LogDetail";
+import type { LogEntry } from "./components/LogDetail";
 import LoginModal from "./components/modals/LoginModal";
 import UploadModal from "./components/modals/UploadModal";
 import { useLogData } from "./hooks/useLogRefresh";
@@ -10,11 +12,34 @@ import "./App.css";
 
 type ModalType = "login" | "upload" | null;
 
+interface LogsResponse {
+  files: LogEntry[];
+}
+
 function App() {
   const [modalType, setModalType] = useState<ModalType>(null);
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [initialLogs, setInitialLogs] = useState<LogsResponse | null>(null);
+  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const { logDataVersion, notifyLogDataChanged } = useLogData();
+
+  useEffect(() => {
+    fetch("/api/logs/list", { credentials: "include" })
+      .then((res) => {
+        if (res.ok) {
+          return res.json().then((data) => {
+            setInitialLogs(data);
+            setAuthed(true);
+          });
+        } else {
+          setModalType("login");
+        }
+      })
+      .catch(() => setModalType("login"))
+      .finally(() => setAuthChecked(true));
+  }, []);
 
   const handleCloseModal = () => {
     setModalType(null);
@@ -36,7 +61,6 @@ function App() {
         });
 
         if (response.ok) {
-          console.log("Logged in successfully");
           setAuthed(true);
           handleCloseModal();
         } else {
@@ -71,17 +95,24 @@ function App() {
     }
   };
 
+  if (!authChecked) return null;
+
   return (
     <main>
-      <Navbar
-        authed={authed}
-        onLoginClick={() => setModalType("login")}
-        onUploadClick={() => setModalType("upload")}
-      />
+      <Navbar authed={authed} onLoginClick={() => setModalType("login")} />
 
       {authed && (
         <div className="app-container">
-          <LogList logDataVersion={logDataVersion} />
+          {selectedLog ? (
+            <LogDetail log={selectedLog} onBack={() => setSelectedLog(null)} />
+          ) : (
+            <LogList
+              logDataVersion={logDataVersion}
+              initialLogs={initialLogs ?? undefined}
+              onLogSelect={setSelectedLog}
+              onUploadClick={() => setModalType("upload")}
+            />
+          )}
         </div>
       )}
 

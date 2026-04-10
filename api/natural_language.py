@@ -364,7 +364,7 @@ def parse_network_csv(csv_lines: List[str]) -> Dict[str, Any]:
         },
         "optional_flags": list(tags),
         "start_pkt_number": start_packet_number,
-        "end_ptk_number": end_packet_number,
+        "end_pkt_number": end_packet_number,
     }
 
 
