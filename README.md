@@ -9,6 +9,15 @@ This is a hobby project of mine, it uses encoding models to spot outliers / susp
 - Docker to package these all togtether and easily package with pgvector for quick local setup
 
 ## Changelog
+### v0.4.0
+- Uses unique filename saving to avoid conflicts
+- Work started on python ORM for the pgvector database
+- Validation for uploaded logs
+- Got database models working
+- Got embedding generation working
+- Make schema.sql for adding extension
+- Added demoenv
+- Created async version of natural language gen functions
 ### v0.3.0
 - Started work on workflow to turn a client's .pcap files into natural language ready for embedding models
 - Switched OpenAI key varibles to OpenRouter

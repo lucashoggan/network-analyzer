@@ -4,15 +4,46 @@ import random
 import shutil
 import string
 import threading
+import time
+from contextlib import asynccontextmanager
 from os.path import basename
 from pathlib import Path
+from typing import Tuple
 
-from fastapi import Body, FastAPI, File, HTTPException, Request, Response, UploadFile
+from db_setup import LogFile, LogSection, database, init_db, metadata
+from fastapi import (
+    BackgroundTasks,
+    Body,
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from natural_language import (
+    batch_csv_to_nl_async,
+    get_embedding,
+    timeframe_csv_to_nl,
+    timeframe_csv_to_nl_async,
+    validate_csv_headers,
+)
+from sqlalchemy import update
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-app = FastAPI(title="Network Analyzer API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    await database.connect()
+    yield
+
+    await database.disconnect()
+
+
+app = FastAPI(title="Network Analyzer API", version="0.1.0", lifespan=lifespan)
 
 # Configure CORS to dynamically allow the request origin
 app.add_middleware(
@@ -32,6 +63,12 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 _EXEMPT_PATHS = {"/health", "/users/login"}
 _valid_tokens = set()
 _token_lock = threading.Lock()
+
+PROCESSING_RULES = {
+    "method": "batch",
+    "timeframe_seconds": 10 * 60,
+    "batch_size": 5,
+}
 
 
 class SessionCookieMiddleware(BaseHTTPMiddleware):
@@ -109,17 +146,70 @@ def list_files():
         raise HTTPException(status_code=500, detail="Internal Error")
 
 
+async def on_section_nl_gen(log_file_uuid: int, data: Tuple[str, Tuple[int, int]]):
+    emb = get_embedding(data[0])
+    query = LogSection.__table__.insert().values(
+        file_id=log_file_uuid,
+        embedding=emb,
+        start_packet_number=data[1][0],
+        end_packet_number=data[1][1],
+    )
+    await database.execute(query)
+
+
+async def process_log_upload(log_file_uuid: int, file_path: str):
+    async def callback(data):
+        await on_section_nl_gen(log_file_uuid, data)
+
+    if PROCESSING_RULES["method"] == "timeframe":
+        await timeframe_csv_to_nl_async(
+            file_path,
+            PROCESSING_RULES["timeframe_seconds"],
+            callback,
+        )
+    elif PROCESSING_RULES["method"] == "batch":
+        await batch_csv_to_nl_async(file_path, PROCESSING_RULES["batch_size"], callback)
+    else:
+        return
+
+    # update(LogFile).where(LogFile.id == log_file_uuid).values(processed=True)
+    query = (
+        LogFile.__table__.update()
+        .where(LogFile.id == log_file_uuid)
+        .values(processed=True)
+    )
+    await database.execute(query)
+    print("Log Uploaded")
+
+
+# LOG endpoints
 @app.post("/logs/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     try:
         if file.filename is None:
             raise Exception("Error finding the filename")
 
+        # grab uploaded filename, create unique filename from that and then locally save the file
         filename = basename(file.filename)
-        file_path = UPLOAD_DIR / filename
+        unique_filename = f"{int(threading.get_ident())}_{int(time.time())}_{filename}"
+        file_path = UPLOAD_DIR / unique_filename
         with file_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        return {"filename": filename, "status": "saved"}
+
+        # if csv follows required scheme,
+        # insert row into log_files,
+        # start file processing and send success response
+        if validate_csv_headers(str(file_path)):
+            query = LogFile.__table__.insert().values(filename=unique_filename)
+            id = await database.execute(query)
+            background_tasks.add_task(process_log_upload, id, str(file_path))
+            return {"id": id, "status": "saved"}
+        else:
+            raise HTTPException(
+                status_code=422, detail="Incorrect csv formatting provided"
+            )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
 

@@ -1,9 +1,56 @@
 import csv
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from os import environ
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+
+from openai import OpenAI
+
+OPENROUTER_KEY = environ.get("OPENROUTER_KEY")
+
+openrouter_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_KEY
+)
 
 
-def process_network_data(data: Dict[str, Any]) -> str:
+# OpenRouter API functions
+def get_embedding(text: str) -> List[float]:
+    embedding = openrouter_client.embeddings.create(
+        model="openai/text-embedding-3-small", input=text, encoding_format="float"
+    )
+    return embedding.data[0].embedding
+
+
+# CSV functions
+def validate_csv_headers(file_path: str) -> bool:
+    """
+    Checks if the CSV file has the required headers.
+    """
+    required_headers = {
+        "packet_number",
+        "timestamp",
+        "packets",
+        "bytes",
+        "direction",
+        "protocol",
+        "source_ip",
+        "destination_ip",
+        "domain",
+        "status",
+        "is_auth",
+        "auth_status",
+        "port",
+        "tag",
+    }
+    try:
+        with open(file_path, mode="r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            headers = set(next(reader))
+            return required_headers.issubset(headers)
+    except (FileNotFoundError, StopIteration, Exception):
+        return False
+
+
+def process_network_data(data: Dict[str, Any]) -> Tuple[str, Tuple[int, int]]:
     """
     Transforms structured network data into a natural language summary.
     """
@@ -17,6 +64,8 @@ def process_network_data(data: Dict[str, Any]) -> str:
     auth = data.get("authentication", {})
     ports = data.get("ports", {})
     flags = data.get("optional_flags", [])
+    start_pkt_number = data.get("start_pkt_number", -1)
+    end_pkt_number = data.get("end_pkt_number", -1)
 
     # --- 1. Traffic Summary ---
     total_packets = traffic.get("total_packets", 0)
@@ -164,7 +213,7 @@ def process_network_data(data: Dict[str, Any]) -> str:
         f"{behavioural_summary}"
     )
 
-    return output
+    return (output, (start_pkt_number, end_pkt_number))
 
 
 def parse_network_csv(csv_lines: List[str]) -> Dict[str, Any]:
@@ -186,9 +235,17 @@ def parse_network_csv(csv_lines: List[str]) -> Dict[str, Any]:
     ports_set = set()
     tags = set()
     timestamps = []
+    start_packet_number: int | None = None
+    end_packet_number: int = -1
 
     reader = csv.DictReader(csv_lines)
     for row in reader:
+        packet_num = row.get("packet_number")
+        if packet_num and not start_packet_number:
+            start_packet_number = int(packet_num)
+        if packet_num:
+            end_packet_number = int(packet_num)
+
         total_requests += 1
 
         ts_str = row.get("timestamp", "")
@@ -306,12 +363,14 @@ def parse_network_csv(csv_lines: List[str]) -> Dict[str, Any]:
             else "concentrated",
         },
         "optional_flags": list(tags),
+        "start_pkt_number": start_packet_number,
+        "end_ptk_number": end_packet_number,
     }
 
 
 def _process_csv_file(
     file_path: str,
-    on_complete: Callable[[str], Any],
+    on_complete: Callable[[Tuple[str, Tuple[int, int]]], Any],
     batch_size: Optional[int] = None,
     timeframe_seconds: Optional[int] = None,
 ) -> None:
@@ -366,24 +425,32 @@ def _process_csv_file(
                 on_complete(process_network_data(data))
 
 
-def batch_csv_to_nl(file_path: str, batch_size: int, on_complete: Callable[[str], Any]):
+def batch_csv_to_nl(
+    file_path: str,
+    batch_size: int,
+    on_complete: Callable[[Tuple[str, Tuple[int, int]]], Any],
+):
     """
     Opens csv file, turns batches of requests into natural language and calls on_complete on every branch
     """
     _process_csv_file(file_path, on_complete, batch_size=batch_size)
 
 
-def batch_csv_to_nl_arr(file_path: str, batch_size: int) -> List[str]:
+def batch_csv_to_nl_arr(
+    file_path: str, batch_size: int
+) -> List[Tuple[str, Tuple[int, int]]]:
     """
     Opens csv file, turns batches of requests into natural language and returns an array of all the outputs
     """
-    out = []
+    out: List[Tuple[str, Tuple[int, int]]] = []
     batch_csv_to_nl(file_path, batch_size, lambda x: out.append(x))
     return out
 
 
 def timeframe_csv_to_nl(
-    file_path: str, timeframe_seconds: int, on_complete: Callable[[str], Any]
+    file_path: str,
+    timeframe_seconds: int,
+    on_complete: Callable[[Tuple[str, Tuple[int, int]]], Any],
 ):
     """
     Opens csv file, turns lines in a timeframe into natural language and calls on_complete on every branch
@@ -391,10 +458,123 @@ def timeframe_csv_to_nl(
     _process_csv_file(file_path, on_complete, timeframe_seconds=timeframe_seconds)
 
 
-def timeframe_csv_to_nl_arr(file_path: str, timeframe_seconds: int) -> List[str]:
+def timeframe_csv_to_nl_arr(
+    file_path: str, timeframe_seconds: int
+) -> List[Tuple[str, Tuple[int, int]]]:
     """
     Opens csv file, turns lines in a timeframe into natural language and returns an array of all the outputs
     """
-    out = []
+    out: List[Tuple[str, Tuple[int, int]]] = []
     timeframe_csv_to_nl(file_path, timeframe_seconds, lambda x: out.append(x))
+    return out
+
+
+async def _process_csv_file_async(
+    file_path: str,
+    on_complete: Callable[[Tuple[str, Tuple[int, int]]], Awaitable[Any]],
+    batch_size: Optional[int] = None,
+    timeframe_seconds: Optional[int] = None,
+) -> None:
+    """
+    Async copy of the CSV file processor that awaits the callback.
+    """
+    with open(file_path, mode="r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        header = next(reader)
+
+        if batch_size:
+            batch = []
+            for row in reader:
+                batch.append(row)
+                if len(batch) >= batch_size:
+                    lines = [",".join(header)] + [",".join(r) for r in batch]
+                    data = parse_network_csv(lines)
+                    await on_complete(process_network_data(data))
+                    batch = []
+            if batch:
+                lines = [",".join(header)] + [",".join(r) for r in batch]
+                data = parse_network_csv(lines)
+                await on_complete(process_network_data(data))
+
+        elif timeframe_seconds:
+            current_batch = []
+            start_ts = None
+
+            for row in reader:
+                row_dict = dict(zip(header, row))
+                ts_str = row_dict.get("timestamp", "")
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+
+                if start_ts is None:
+                    start_ts = ts
+
+                if (ts - start_ts).total_seconds() >= timeframe_seconds:
+                    lines = [",".join(header)] + [",".join(r) for r in current_batch]
+                    data = parse_network_csv(lines)
+                    await on_complete(process_network_data(data))
+                    current_batch = [row]
+                    start_ts = ts
+                else:
+                    current_batch.append(row)
+
+            if current_batch:
+                lines = [",".join(header)] + [",".join(r) for r in current_batch]
+                data = parse_network_csv(lines)
+                await on_complete(process_network_data(data))
+
+
+async def batch_csv_to_nl_async(
+    file_path: str,
+    batch_size: int,
+    on_complete: Callable[[Tuple[str, Tuple[int, int]]], Awaitable[Any]],
+):
+    """
+    Async copy of batch processing that awaits the callback.
+    """
+    await _process_csv_file_async(file_path, on_complete, batch_size=batch_size)
+
+
+async def batch_csv_to_nl_arr_async(
+    file_path: str, batch_size: int
+) -> List[Tuple[str, Tuple[int, int]]]:
+    """
+    Async copy of batch_csv_to_nl_arr that collects results from an async callback.
+    """
+    out: List[Tuple[str, Tuple[int, int]]] = []
+
+    async def _collect(x: Tuple[str, Tuple[int, int]]) -> None:
+        out.append(x)
+
+    await batch_csv_to_nl_async(file_path, batch_size, _collect)
+    return out
+
+
+async def timeframe_csv_to_nl_async(
+    file_path: str,
+    timeframe_seconds: int,
+    on_complete: Callable[[Tuple[str, Tuple[int, int]]], Awaitable[Any]],
+):
+    """
+    Async copy of timeframe processing that awaits the callback.
+    """
+    await _process_csv_file_async(
+        file_path, on_complete, timeframe_seconds=timeframe_seconds
+    )
+
+
+async def timeframe_csv_to_nl_arr_async(
+    file_path: str, timeframe_seconds: int
+) -> List[Tuple[str, Tuple[int, int]]]:
+    """
+    Async copy of timeframe_csv_to_nl_arr that collects results from an async callback.
+    """
+    out: List[Tuple[str, Tuple[int, int]]] = []
+
+    async def _collect(x: Tuple[str, Tuple[int, int]]) -> None:
+        out.append(x)
+
+    await timeframe_csv_to_nl_async(file_path, timeframe_seconds, _collect)
     return out

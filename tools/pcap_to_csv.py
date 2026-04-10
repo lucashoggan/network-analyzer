@@ -58,6 +58,7 @@ def process_pcap(input_pcap: str, output_csv: str):
     """Reads a PCAP file and writes the extracted data to a CSV."""
 
     fieldnames = [
+        "packet_number",
         "timestamp",
         "packets",
         "bytes",
@@ -184,6 +185,7 @@ def process_pcap(input_pcap: str, output_csv: str):
 
                 # Construct row
                 row = {
+                    "packet_number": pkt_num,
                     "timestamp": timestamp,
                     "packets": 1,
                     "bytes": pkt_bytes,

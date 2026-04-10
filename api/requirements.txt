@@ -4,3 +4,6 @@ python-multipart
 sqlalchemy
 asyncpg
 pgvector
+databases
+openai
+psycopg2-binary

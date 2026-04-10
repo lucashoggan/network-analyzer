@@ -1,0 +1,7 @@
+OPENROUTER_KEY=...
+
+PG_USER=dbuser
+PG_PASSWORD=mysecuredb
+
+APP_PASSWORD=test
+PG_DB=mydb
